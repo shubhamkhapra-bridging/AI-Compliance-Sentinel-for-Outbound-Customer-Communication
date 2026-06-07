@@ -1,0 +1,818 @@
+// BridgingTech AI Email Platform — Prisma Schema
+// Reflects the full 10-domain data model
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Domain 1: Identity & Access ────────────────────────────────
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  fullName      String
+  ssoProvider   String?
+  ssoSubjectId  String?
+  active        Boolean   @default(true)
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  teams              UserTeam[]
+  roles              UserRole[]
+  sendingAccounts    SendingAccount[]
+  conversations      Conversation[]
+  campaigns          Campaign[]
+  approvalRequests   ApprovalRequest[]  @relation("RequestedBy")
+  approvalDecisions  ApprovalDecision[]
+  auditLogs          AuditLog[]
+  agentInvocations   AgentInvocation[]
+  brandKitVersions   BrandKitVersion[]
+  emailTemplates     EmailTemplate[]
+  segments           Segment[]
+
+  @@map("users")
+}
+
+model Team {
+  id              String   @id @default(uuid())
+  name            String   @unique
+  description     String?
+  defaultProductId String?
+  managerUserId   String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  members          UserTeam[]
+  productAccess    ProductTeamAccess[]
+
+  @@map("teams")
+}
+
+model UserTeam {
+  id         String @id @default(uuid())
+  userId     String
+  teamId     String
+  roleInTeam String @default("member")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+  team Team @relation(fields: [teamId], references: [id])
+
+  @@unique([userId, teamId])
+  @@map("user_teams")
+}
+
+model Role {
+  id           String   @id @default(uuid())
+  name         String   @unique
+  permissions  Json
+  isSystemRole Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  userRoles UserRole[]
+
+  @@map("roles")
+}
+
+model UserRole {
+  id          String  @id @default(uuid())
+  userId      String
+  roleId      String
+  scopeType   String  @default("global")
+  scopeId     String?
+  grantedBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+  role Role @relation(fields: [roleId], references: [id])
+
+  @@map("user_roles")
+}
+
+model ProductTeamAccess {
+  id           String  @id @default(uuid())
+  teamId       String
+  productId    String
+  canSend1to1  Boolean @default(false)
+  canSendBulk  Boolean @default(false)
+  canApprove   Boolean @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  team    Team    @relation(fields: [teamId], references: [id])
+  product Product @relation(fields: [productId], references: [id])
+
+  @@unique([teamId, productId])
+  @@map("product_team_access")
+}
+
+// ─── Domain 2: Products & Brand ─────────────────────────────────
+
+model Product {
+  id            String   @id @default(uuid())
+  slug          String   @unique
+  name          String
+  websiteUrl    String?
+  sendingDomain String?
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  brandKit          BrandKit?
+  complianceRules   ProductComplianceRule[]
+  teamAccess        ProductTeamAccess[]
+  contacts          ContactSynced[]
+  emailTemplates    EmailTemplate[]
+  conversations     Conversation[]
+  campaigns         Campaign[]
+  riskRules         RiskRule[]
+  emails            Email[]
+  dbConnection      ProductDbConnection?
+
+  @@map("products")
+}
+
+model BrandKit {
+  id           String   @id @default(uuid())
+  productId    String   @unique
+  colors       Json
+  typography   Json
+  logoUrl      String?
+  logoDarkUrl  String?
+  footerHtml   String?
+  voice        Json
+  version      Int      @default(1)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  product  Product          @relation(fields: [productId], references: [id])
+  versions BrandKitVersion[]
+
+  @@map("brand_kits")
+}
+
+model BrandKitVersion {
+  id            String   @id @default(uuid())
+  brandKitId    String
+  versionNumber Int
+  snapshot      Json
+  editedById    String
+  changelog     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  brandKit  BrandKit @relation(fields: [brandKitId], references: [id])
+  editedBy  User     @relation(fields: [editedById], references: [id])
+
+  @@map("brand_kit_versions")
+}
+
+model ProductComplianceRule {
+  id               String   @id @default(uuid())
+  productId        String
+  regulation       String
+  requiredFooters  Json     @default("[]")
+  forbiddenPhrases Json     @default("[]")
+  rules            Json
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  product          Product           @relation(fields: [productId], references: [id])
+  complianceChecks ComplianceCheck[]
+
+  @@map("product_compliance_rules")
+}
+
+// ─── Domain 3: Contact Hub ───────────────────────────────────────
+
+model ProductDbConnection {
+  id                  String    @id @default(uuid())
+  productId           String    @unique
+  dbHost              String
+  dbPort              Int       @default(3306)
+  dbName              String
+  dbUsername          String
+  dbPasswordEncrypted String
+  syncCron            String    @default("0 * * * *")
+  lastSyncedAt        DateTime?
+  status              String    @default("active")
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  product        Product        @relation(fields: [productId], references: [id])
+  schemaMappings SchemaMapping[]
+  syncJobs       SyncJob[]
+
+  @@map("product_db_connections")
+}
+
+model SchemaMapping {
+  id                    String   @id @default(uuid())
+  productDbConnectionId String
+  sourceTable           String
+  columnMapping         Json
+  customTransformSql    String?
+  version               Int      @default(1)
+  active                Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  connection ProductDbConnection @relation(fields: [productDbConnectionId], references: [id])
+
+  @@map("schema_mappings")
+}
+
+model SyncJob {
+  id                    String    @id @default(uuid())
+  productDbConnectionId String
+  startedAt             DateTime  @default(now())
+  finishedAt            DateTime?
+  rowsSynced            Int       @default(0)
+  rowsFailed            Int       @default(0)
+  status                String    @default("running")
+  errorLog              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  connection ProductDbConnection @relation(fields: [productDbConnectionId], references: [id])
+
+  @@map("sync_jobs")
+}
+
+model ContactSynced {
+  id               String   @id @default(uuid())
+  productId        String
+  sourceId         String
+  email            String
+  fullName         String?
+  phone            String?
+  companyName      String?
+  leadStage        String?
+  customAttributes Json     @default("{}")
+  lastSyncedAt     DateTime @default(now())
+  contentHash      String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  product            Product              @relation(fields: [productId], references: [id])
+  historyCache       ContactHistoryCache?
+  conversations      Conversation[]
+  campaignRecipients CampaignRecipient[]
+  emailRecipients    EmailRecipient[]
+
+  @@unique([productId, sourceId])
+  @@index([productId, email])
+  @@index([productId, leadStage])
+  @@map("contacts_synced")
+}
+
+model ContactHistoryCache {
+  contactId        String   @id
+  lastEmailSentAt  DateTime?
+  lastOpenedAt     DateTime?
+  totalSent        Int      @default(0)
+  totalOpens       Int      @default(0)
+  totalClicks      Int      @default(0)
+  totalReplies     Int      @default(0)
+  updatedAt        DateTime @updatedAt
+
+  contact ContactSynced @relation(fields: [contactId], references: [id])
+
+  @@map("contact_history_cache")
+}
+
+// ─── Domain 4: Templates ─────────────────────────────────────────
+
+model EmailTemplate {
+  id                String   @id @default(uuid())
+  slug              String
+  name              String
+  category          String
+  productId         String
+  subjectTemplate   String
+  bodyHtmlTemplate  String
+  bodyTextTemplate  String?
+  designTokensUsed  Json     @default("[]")
+  active            Boolean  @default(true)
+  createdById       String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  deletedAt         DateTime?
+
+  product     Product             @relation(fields: [productId], references: [id])
+  createdBy   User                @relation(fields: [createdById], references: [id])
+  versions    TemplateVersion[]
+  performance TemplatePerformance[]
+  campaigns   Campaign[]
+  drafts      EmailDraft[]
+
+  @@unique([productId, slug])
+  @@map("email_templates")
+}
+
+model TemplateVersion {
+  id               String   @id @default(uuid())
+  templateId       String
+  versionNumber    Int
+  subjectTemplate  String
+  bodyHtmlTemplate String
+  changelog        String?
+  isCurrent        Boolean  @default(false)
+  createdById      String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  template  EmailTemplate @relation(fields: [templateId], references: [id])
+
+  @@map("template_versions")
+}
+
+model TemplatePerformance {
+  id             String   @id @default(uuid())
+  templateId     String
+  productId      String
+  periodStart    DateTime
+  periodEnd      DateTime
+  sends          Int      @default(0)
+  opens          Int      @default(0)
+  clicks         Int      @default(0)
+  replies        Int      @default(0)
+  conversions    Int      @default(0)
+  openRate       Decimal  @default(0) @db.Decimal(5, 4)
+  clickRate      Decimal  @default(0) @db.Decimal(5, 4)
+  replyRate      Decimal  @default(0) @db.Decimal(5, 4)
+  performanceScore Decimal @default(0) @db.Decimal(5, 4)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  template EmailTemplate @relation(fields: [templateId], references: [id])
+
+  @@map("template_performance")
+}
+
+// ─── Domain 5: Conversations & Drafts ────────────────────────────
+
+model Conversation {
+  id                  String    @id @default(uuid())
+  userId              String
+  productId           String
+  recipientContactId  String?
+  status              String    @default("active")
+  startedAt           DateTime  @default(now())
+  lastActivityAt      DateTime  @default(now())
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  user      User           @relation(fields: [userId], references: [id])
+  product   Product        @relation(fields: [productId], references: [id])
+  contact   ContactSynced? @relation(fields: [recipientContactId], references: [id])
+  messages  ConversationMessage[]
+  drafts    EmailDraft[]
+  emails    Email[]
+  agentInvocations AgentInvocation[]
+
+  @@map("conversations")
+}
+
+model ConversationMessage {
+  id             String   @id @default(uuid())
+  conversationId String
+  role           String
+  content        String
+  agentInvoked   String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+
+  @@map("conversation_messages")
+}
+
+model EmailDraft {
+  id               String   @id @default(uuid())
+  conversationId   String
+  version          Int      @default(1)
+  subject          String
+  bodyHtml         String
+  bodyText         String?
+  templateId       String?
+  generatedByAgent String?
+  llmProvider      String?
+  llmModel         String?
+  llmCostUsd       Decimal  @default(0) @db.Decimal(12, 4)
+  isCurrent        Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  conversation Conversation   @relation(fields: [conversationId], references: [id])
+  template     EmailTemplate? @relation(fields: [templateId], references: [id])
+  email        Email?
+
+  @@map("email_drafts")
+}
+
+// ─── Domain 6: Campaigns & Segments ──────────────────────────────
+
+model Segment {
+  id                String   @id @default(uuid())
+  name              String
+  productId         String
+  filterDefinition  Json
+  lastEstimatedSize Int?
+  createdById       String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  createdBy User       @relation(fields: [createdById], references: [id])
+  campaigns Campaign[]
+
+  @@map("segments")
+}
+
+model Campaign {
+  id               String    @id @default(uuid())
+  name             String
+  productId        String
+  templateId       String?
+  segmentId        String?
+  scheduledSendAt  DateTime?
+  status           String    @default("draft")
+  totalRecipients  Int       @default(0)
+  createdById      String
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  product    Product            @relation(fields: [productId], references: [id])
+  template   EmailTemplate?     @relation(fields: [templateId], references: [id])
+  segment    Segment?           @relation(fields: [segmentId], references: [id])
+  createdBy  User               @relation(fields: [createdById], references: [id])
+  recipients CampaignRecipient[]
+  emails     Email[]
+
+  @@map("campaigns")
+}
+
+model CampaignRecipient {
+  id         String    @id @default(uuid())
+  campaignId String
+  contactId  String
+  status     String    @default("pending")
+  sentAt     DateTime?
+  emailId    String?
+  skipReason String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  campaign Campaign      @relation(fields: [campaignId], references: [id])
+  contact  ContactSynced @relation(fields: [contactId], references: [id])
+
+  @@index([campaignId, status])
+  @@map("campaign_recipients")
+}
+
+// ─── Domain 7: Risk & Approval ───────────────────────────────────
+
+model RiskRule {
+  id        String   @id @default(uuid())
+  name      String
+  productId String?
+  conditions Json
+  action    String
+  priority  Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  product Product? @relation(fields: [productId], references: [id])
+
+  @@map("risk_rules")
+}
+
+model RiskAssessment {
+  id              String   @id @default(uuid())
+  emailId         String   @unique
+  riskScore       Int
+  riskTier        String
+  rulesTriggered  Json     @default("[]")
+  requiresApproval Boolean @default(false)
+  assessedAt      DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  email            Email             @relation(fields: [emailId], references: [id])
+  approvalRequests ApprovalRequest[]
+
+  @@map("risk_assessments")
+}
+
+model ApprovalRequest {
+  id                    String    @id @default(uuid())
+  emailId               String
+  requestedByUserId     String
+  assignedApproverUserId String?
+  status                String    @default("pending")
+  expiresAt             DateTime
+  decidedAt             DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  email            Email              @relation(fields: [emailId], references: [id])
+  requestedBy      User               @relation("RequestedBy", fields: [requestedByUserId], references: [id])
+  riskAssessment   RiskAssessment?    @relation(fields: [emailId], references: [emailId])
+  decisions        ApprovalDecision[]
+
+  @@map("approval_requests")
+}
+
+model ApprovalDecision {
+  id                String   @id @default(uuid())
+  approvalRequestId String
+  decidedByUserId   String
+  decision          String
+  comments          String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  approvalRequest ApprovalRequest @relation(fields: [approvalRequestId], references: [id])
+  decidedBy       User            @relation(fields: [decidedByUserId], references: [id])
+
+  @@map("approval_decisions")
+}
+
+// ─── Domain 8: Sending ───────────────────────────────────────────
+
+model SendingAccount {
+  id                        String    @id @default(uuid())
+  userId                    String
+  provider                  String
+  emailAddress              String
+  oauthAccessTokenEncrypted  String?
+  oauthRefreshTokenEncrypted String?
+  tokenExpiresAt            DateTime?
+  scopes                    Json      @default("[]")
+  active                    Boolean   @default(true)
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
+
+  user   User    @relation(fields: [userId], references: [id])
+  emails Email[]
+
+  @@unique([userId, emailAddress])
+  @@map("sending_accounts")
+}
+
+model Email {
+  id                String    @id @default(uuid())
+  conversationId    String?
+  campaignId        String?
+  draftId           String?   @unique
+  productId         String
+  senderUserId      String
+  sendingAccountId  String?
+  subject           String
+  bodyHtml          String
+  bodyText          String?
+  scheduledAt       DateTime?
+  sentAt            DateTime?
+  status            String    @default("queued")
+  providerMessageId String?
+  riskScore         Int?
+  approvalRequestId String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  product        Product          @relation(fields: [productId], references: [id])
+  sender         User             @relation(fields: [senderUserId], references: [id])
+  sendingAccount SendingAccount?  @relation(fields: [sendingAccountId], references: [id])
+  conversation   Conversation?    @relation(fields: [conversationId], references: [id])
+  campaign       Campaign?        @relation(fields: [campaignId], references: [id])
+  draft          EmailDraft?      @relation(fields: [draftId], references: [id])
+  recipients     EmailRecipient[]
+  attachments    EmailAttachment[]
+  links          EmailLink[]
+  events         EmailEvent[]
+  riskAssessment RiskAssessment?
+  approvalRequest ApprovalRequest?
+  complianceChecks ComplianceCheck[]
+  agentInvocations AgentInvocation[]
+
+  @@index([senderUserId, sentAt])
+  @@index([productId, sentAt])
+  @@map("emails")
+}
+
+model EmailRecipient {
+  id           String  @id @default(uuid())
+  emailId      String
+  contactId    String?
+  recipientType String
+  emailAddress String
+  displayName  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  email   Email          @relation(fields: [emailId], references: [id])
+  contact ContactSynced? @relation(fields: [contactId], references: [id])
+
+  @@map("email_recipients")
+}
+
+model EmailAttachment {
+  id          String   @id @default(uuid())
+  emailId     String
+  filename    String
+  mimeType    String
+  sizeBytes   BigInt
+  storageUrl  String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  email Email @relation(fields: [emailId], references: [id])
+
+  @@map("email_attachments")
+}
+
+// ─── Domain 9: Tracking & Events ─────────────────────────────────
+
+model EmailLink {
+  id             String   @id @default(uuid())
+  emailId        String
+  originalUrl    String
+  trackingToken  String   @unique
+  position       Int?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  email  Email        @relation(fields: [emailId], references: [id])
+  clicks EmailClick[]
+
+  @@map("email_links")
+}
+
+model EmailEvent {
+  id          String   @id @default(uuid())
+  emailId     String
+  eventType   String
+  eventData   Json     @default("{}")
+  ipAddress   String?
+  userAgent   String?
+  occurredAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  email  Email      @relation(fields: [emailId], references: [id])
+  open   EmailOpen?
+  click  EmailClick?
+
+  @@index([emailId])
+  @@index([eventType, occurredAt])
+  @@map("email_events")
+}
+
+model EmailOpen {
+  id                  String   @id @default(uuid())
+  emailEventId        String   @unique
+  openedAt            DateTime @default(now())
+  deviceType          String?
+  browser             String?
+  locationCountry     String?
+  readDurationSeconds Int?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  event EmailEvent @relation(fields: [emailEventId], references: [id])
+
+  @@map("email_opens")
+}
+
+model EmailClick {
+  id           String   @id @default(uuid())
+  emailEventId String   @unique
+  emailLinkId  String
+  clickedAt    DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  event EmailEvent @relation(fields: [emailEventId], references: [id])
+  link  EmailLink  @relation(fields: [emailLinkId], references: [id])
+
+  @@map("email_clicks")
+}
+
+// ─── Domain 10: AI Ops, Compliance & Audit ───────────────────────
+
+model PromptTemplate {
+  id                 String   @id @default(uuid())
+  agentType          String
+  version            Int      @default(1)
+  systemPrompt       String
+  userPromptTemplate String
+  defaultModel       String
+  active             Boolean  @default(true)
+  performanceScore   Decimal  @default(0) @db.Decimal(5, 4)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  invocations AgentInvocation[]
+
+  @@unique([agentType, version])
+  @@map("prompt_templates")
+}
+
+model AgentInvocation {
+  id               String   @id @default(uuid())
+  conversationId   String?
+  emailId          String?
+  agentType        String
+  promptTemplateId String?
+  promptUsed       String
+  response         String?
+  llmProvider      String
+  llmModel         String
+  inputTokens      Int      @default(0)
+  outputTokens     Int      @default(0)
+  costUsd          Decimal  @default(0) @db.Decimal(12, 4)
+  latencyMs        Int?
+  success          Boolean  @default(true)
+  error            String?
+  invokedAt        DateTime @default(now())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  conversation     Conversation?   @relation(fields: [conversationId], references: [id])
+  email            Email?          @relation(fields: [emailId], references: [id])
+  user             User?           @relation(fields: [conversationId], references: [id], map: "agent_invocation_user_fk")
+  promptTemplate   PromptTemplate? @relation(fields: [promptTemplateId], references: [id])
+  complianceChecks ComplianceCheck[]
+
+  @@index([agentType, invokedAt])
+  @@map("agent_invocations")
+}
+
+model LlmUsageAggregate {
+  id                String   @id @default(uuid())
+  usageDate         DateTime @db.Date
+  userId            String?
+  productId         String?
+  agentType         String
+  llmProvider       String
+  totalCalls        Int      @default(0)
+  totalInputTokens  BigInt   @default(0)
+  totalOutputTokens BigInt   @default(0)
+  totalCostUsd      Decimal  @default(0) @db.Decimal(12, 4)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([usageDate, userId, productId, agentType, llmProvider])
+  @@map("llm_usage_aggregates")
+}
+
+model ComplianceCheck {
+  id                  String   @id @default(uuid())
+  emailId             String
+  ruleId              String
+  checkType           String
+  passed              Boolean
+  violations          Json     @default("[]")
+  agentInvocationId   String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  email            Email                  @relation(fields: [emailId], references: [id])
+  rule             ProductComplianceRule  @relation(fields: [ruleId], references: [id])
+  agentInvocation  AgentInvocation?       @relation(fields: [agentInvocationId], references: [id])
+
+  @@map("compliance_checks")
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  userId      String?
+  action      String
+  entityType  String
+  entityId    String?
+  beforeState Json?
+  afterState  Json?
+  ipAddress   String?
+  userAgent   String?
+  occurredAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId, occurredAt])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}
