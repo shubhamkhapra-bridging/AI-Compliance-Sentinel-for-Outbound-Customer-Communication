@@ -1,31 +1,52 @@
-"""LLM client — provider-agnostic via LiteLLM.
+"""LLM client — OpenAI and Gemini only (via litellm).
 
-Set LLM_PROVIDER=openai  + OPENAI_API_KEY   to use OpenAI.
-Set LLM_PROVIDER=anthropic + ANTHROPIC_API_KEY to use Anthropic (default).
+Model selection:
+  - Pass an explicit model name to chat() to override.
+  - Default provider is determined by LLM_PROVIDER env var (openai | gemini).
+  - litellm requires provider-prefixed model names:
+      openai/gpt-4o-mini   → OpenAI
+      gemini/gemini-1.5-flash → Google Gemini
 """
+import os
 import time
 import litellm
 from core.config import settings
 from core.logger import logger
 
-# OpenAI model to use when LLM_PROVIDER=openai
-_OPENAI_DEFAULT = "gpt-4o"
+_OPENAI_DEFAULT = "openai/gpt-4o-mini"
+# Use Gemini's OpenAI-compatible REST endpoint to avoid gRPC issues
+_GEMINI_DEFAULT = "openai/gemini-1.5-flash"
+_GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+
+litellm.set_verbose = False
+
+if settings.GEMINI_API_KEY:
+    os.environ.setdefault("GEMINI_API_KEY", settings.GEMINI_API_KEY)
 
 
-def _resolve_model(model: str | None) -> tuple[str, str]:
-    """Return (provider, model_name) based on config and override."""
+def _is_gemini(model: str) -> bool:
+    return "gemini" in model
+
+
+def _resolve_model(model: str | None) -> str:
+    """Return a litellm-compatible provider-prefixed model name."""
     if model:
-        # Explicit override — detect provider from model name prefix
+        # Already fully qualified
+        if model.startswith("openai/") or model.startswith("gemini/"):
+            # Normalise gemini/ → openai/ via REST endpoint
+            if model.startswith("gemini/"):
+                return f"openai/{model[len('gemini/'):]}"
+            return model
         if model.startswith("gpt") or model.startswith("o1") or model.startswith("o3"):
-            return "openai", model
-        if model.startswith("claude"):
-            return "anthropic", model
-        return settings.LLM_PROVIDER, model
+            return f"openai/{model}"
+        if model.startswith("gemini-"):
+            return f"openai/{model}"
+        return model
 
-    if settings.LLM_PROVIDER == "openai" or (not settings.ANTHROPIC_API_KEY and settings.OPENAI_API_KEY):
-        return "openai", _OPENAI_DEFAULT
+    if settings.LLM_PROVIDER == "gemini":
+        return _GEMINI_DEFAULT
 
-    return "anthropic", settings.DEFAULT_MODEL
+    return _OPENAI_DEFAULT
 
 
 async def chat(
@@ -36,75 +57,78 @@ async def chat(
     max_tokens: int = 2048,
     agent_type: str = "unknown",
 ) -> tuple[str, dict]:
-    """Call LLM and return (response_text, usage_dict).
-
-    Provider is selected automatically from LLM_PROVIDER env var.
-    Falls back to OpenAI if ANTHROPIC_API_KEY is absent.
-    """
-    provider, chosen_model = _resolve_model(model)
+    """Call LLM and return (response_text, usage_dict)."""
+    chosen_model = _resolve_model(model)
     start = time.monotonic()
 
-    if provider == "anthropic":
-        return await _call_anthropic(system, messages, chosen_model, max_tokens, agent_type, start)
-    return await _call_openai(system, messages, chosen_model, max_tokens, agent_type, start)
+    is_gemini = _is_gemini(chosen_model)
+    api_key = (settings.GEMINI_API_KEY if is_gemini else settings.OPENAI_API_KEY) or None
 
+    kwargs: dict = {
+        "model": chosen_model,
+        "messages": [{"role": "system", "content": system}] + messages,
+        "max_tokens": max_tokens,
+    }
+    if api_key:
+        kwargs["api_key"] = api_key
+    if is_gemini:
+        kwargs["api_base"] = _GEMINI_BASE_URL
 
-async def _call_anthropic(
-    system: str,
-    messages: list[dict],
-    model: str,
-    max_tokens: int,
-    agent_type: str,
-    start: float,
-) -> tuple[str, dict]:
-    import anthropic as _anthropic
-    client = _anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
-    try:
-        response = await client.messages.create(
-            model=model,
-            system=system,
-            messages=messages,
-            max_tokens=max_tokens,
-        )
-        text = response.content[0].text
-        usage = {
-            "provider": "anthropic",
-            "model": model,
-            "input_tokens": response.usage.input_tokens,
-            "output_tokens": response.usage.output_tokens,
-            "latency_ms": int((time.monotonic() - start) * 1000),
-        }
-        logger.info("llm_call", agent=agent_type, **usage)
-        return text, usage
-
-    except Exception as exc:
-        if settings.OPENAI_API_KEY:
-            logger.warning("anthropic_failed_falling_back_to_openai", error=str(exc))
-            return await _call_openai(system, messages, _OPENAI_DEFAULT, max_tokens, agent_type, start)
-        raise
-
-
-async def _call_openai(
-    system: str,
-    messages: list[dict],
-    model: str,
-    max_tokens: int,
-    agent_type: str,
-    start: float,
-) -> tuple[str, dict]:
-    response = await litellm.acompletion(
-        model=model,
-        messages=[{"role": "system", "content": system}] + messages,
-        max_tokens=max_tokens,
-        api_key=settings.OPENAI_API_KEY,
-    )
+    response = await litellm.acompletion(**kwargs)
     text = response.choices[0].message.content or ""
+
+    provider = chosen_model.split("/")[0]
     usage = {
-        "provider": "openai",
-        "model": model,
+        "provider": provider,
+        "model": chosen_model,
         "input_tokens": response.usage.prompt_tokens,
         "output_tokens": response.usage.completion_tokens,
         "latency_ms": int((time.monotonic() - start) * 1000),
     }
     logger.info("llm_call", agent=agent_type, **usage)
     return text, usage
+
+
+async def vision_chat(
+    *,
+    system: str,
+    text: str,
+    image_url: str,
+    model: str | None = None,
+    max_tokens: int = 500,
+    agent_type: str = "vision",
+) -> tuple[str, dict]:
+    """Call a vision-capable LLM with one image (data URL or http URL)."""
+    chosen_model = _resolve_model(model)
+    start = time.monotonic()
+
+    is_gemini = _is_gemini(chosen_model)
+    api_key = (settings.GEMINI_API_KEY if is_gemini else settings.OPENAI_API_KEY) or None
+
+    kwargs: dict = {
+        "model": chosen_model,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": [
+                {"type": "text", "text": text},
+                {"type": "image_url", "image_url": {"url": image_url}},
+            ]},
+        ],
+        "max_tokens": max_tokens,
+    }
+    if api_key:
+        kwargs["api_key"] = api_key
+    if is_gemini:
+        kwargs["api_base"] = _GEMINI_BASE_URL
+
+    response = await litellm.acompletion(**kwargs)
+    out = response.choices[0].message.content or ""
+    usage = {
+        "provider": chosen_model.split("/")[0],
+        "model": chosen_model,
+        "input_tokens": response.usage.prompt_tokens,
+        "output_tokens": response.usage.completion_tokens,
+        "latency_ms": int((time.monotonic() - start) * 1000),
+    }
+    logger.info("vision_call", agent=agent_type, **usage)
+    return out, usage

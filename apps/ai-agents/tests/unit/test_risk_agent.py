@@ -6,7 +6,7 @@ from main import app
 
 _API_KEY = "internal-secret"
 _HEADERS = {"X-API-Key": _API_KEY, "Content-Type": "application/json"}
-_USAGE = {"provider": "anthropic", "input_tokens": 50, "output_tokens": 30, "latency_ms": 100}
+_USAGE = {"provider": "openai", "model": "openai/gpt-4o-mini", "input_tokens": 50, "output_tokens": 30, "latency_ms": 100}
 
 
 @pytest.mark.asyncio
@@ -37,7 +37,7 @@ async def test_single_send_no_violations_is_low_risk():
         "routing": "auto_send",
         "reasoning": "Single recipient, no violations",
     })
-    with patch("tools.llm_client.chat", new_callable=AsyncMock, return_value=(llm_response, _USAGE)):
+    with patch("routers.risk.chat", new_callable=AsyncMock, return_value=(llm_response, _USAGE)):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.post("/agents/risk", headers=_HEADERS, json={
                 "emailId": "email-002",

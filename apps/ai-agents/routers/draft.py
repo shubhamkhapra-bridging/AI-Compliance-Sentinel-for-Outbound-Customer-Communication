@@ -13,7 +13,12 @@ class DraftPayload(BaseModel):
     userMessage: str
     productId: str
     productSlug: str = "unknown"
+    companyName: str = ""
+    logoUrl: str = ""
+    websiteUrl: str = ""
+    companyAddress: str = ""
     brandVoice: dict = {}
+    brandColors: dict = {}
     contact: dict | None = None
     emailHistory: dict | None = None
     previousDrafts: list[dict] = []
@@ -27,13 +32,14 @@ class DraftPayload(BaseModel):
 async def create_draft(payload: DraftPayload):
     result = await _pipeline.run(payload.model_dump())
     return {
-        "conversationId": payload.conversationId,
-        "subject": result["subject"],
-        "bodyHtml": result["body_html"],
-        "bodyText": result["body_text"],
-        "complianceReport": result["compliance_report"],
+        "conversationId":     payload.conversationId,
+        "subject":            result["subject"],
+        "bodyHtml":           result["body_html"],
+        "bodyText":           result["body_text"],
+        "complianceReport":   result["compliance_report"],
         "deliverabilityReport": result["deliverability_report"],
-        "intent": result["intent"],
-        "usage": result["usage"],
-        "warnings": result["warnings"],
+        "intent":             result["intent"],
+        "brand":              result.get("brand", {}),
+        "usage":              result["usage"],
+        "warnings":           result["warnings"],
     }

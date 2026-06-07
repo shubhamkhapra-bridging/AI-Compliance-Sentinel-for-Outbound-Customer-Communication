@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 from agents.generation_agent import GenerationAgent
 from models.agent_models import AgentInput
 
-_USAGE = {"provider": "anthropic", "input_tokens": 200, "output_tokens": 150, "latency_ms": 300}
+_USAGE = {"provider": "gemini", "model": "openai/gemini-1.5-flash", "input_tokens": 200, "output_tokens": 150, "latency_ms": 300}
 _DRAFT = json.dumps({
     "subject": "Follow-up on your loan application",
     "body_html": "<p>Dear John,</p><p>We wanted to follow up on your recent application.</p><a href='{{unsubscribe_url}}'>Unsubscribe</a>",
@@ -14,7 +14,7 @@ _DRAFT = json.dumps({
 
 @pytest.mark.asyncio
 async def test_generates_complete_draft():
-    with patch("tools.llm_client.chat", new_callable=AsyncMock, return_value=(_DRAFT, _USAGE)):
+    with patch("agents.generation_agent.chat", new_callable=AsyncMock, return_value=(_DRAFT, _USAGE)):
         agent = GenerationAgent()
         out = await agent.run(AgentInput(context={
             "user_message": "Send a follow-up to John about his loan application",
@@ -32,7 +32,7 @@ async def test_generates_complete_draft():
 @pytest.mark.asyncio
 async def test_handles_malformed_llm_response():
     malformed = '```json\n{"subject": "Test", "body_html": "<p>Hi</p>", "body_text": "Hi"}\n```'
-    with patch("tools.llm_client.chat", new_callable=AsyncMock, return_value=(malformed, _USAGE)):
+    with patch("agents.generation_agent.chat", new_callable=AsyncMock, return_value=(malformed, _USAGE)):
         agent = GenerationAgent()
         out = await agent.run(AgentInput(context={
             "user_message": "Send a test email",
@@ -50,7 +50,7 @@ async def test_includes_previous_draft_context():
         call_args.append(kwargs)
         return (_DRAFT, _USAGE)
 
-    with patch("tools.llm_client.chat", side_effect=capture_chat):
+    with patch("agents.generation_agent.chat", side_effect=capture_chat):
         agent = GenerationAgent()
         await agent.run(AgentInput(context={
             "user_message": "Make the tone more urgent",

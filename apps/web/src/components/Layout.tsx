@@ -8,17 +8,19 @@ import {
   BarChart3,
   LogOut,
   Mail,
+  Inbox,
 } from "lucide-react";
 import { useAuthStore } from "../hooks/useAuthStore";
 import clsx from "clsx";
 
 const nav = [
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/compose", label: "Compose", icon: PenLine },
-  { to: "/campaigns", label: "Campaigns", icon: Megaphone },
-  { to: "/contacts", label: "Contacts", icon: Users },
-  { to: "/approvals", label: "Approvals", icon: ShieldCheck },
-  { to: "/analytics", label: "Analytics", icon: BarChart3 },
+  { to: "/dashboard", label: "Dashboard",     icon: LayoutDashboard },
+  { to: "/compose",   label: "Compose",       icon: PenLine },
+  { to: "/emails",    label: "Email History", icon: Inbox },
+  { to: "/campaigns", label: "Campaigns",     icon: Megaphone },
+  { to: "/contacts",  label: "Contacts",      icon: Users },
+  { to: "/approvals", label: "Approvals",     icon: ShieldCheck },
+  { to: "/analytics", label: "Analytics",     icon: BarChart3 },
 ];
 
 export default function Layout({ children }: { children: React.ReactNode }) {

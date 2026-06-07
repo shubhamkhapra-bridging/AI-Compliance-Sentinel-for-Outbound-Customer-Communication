@@ -36,13 +36,16 @@ export default function Login() {
     }
   };
 
-  const demoLogin = (demo: typeof DEMO_USERS[0]) => {
-    login("demo-token-" + demo.role, {
-      id: "demo-" + demo.role,
-      email: demo.email,
-      fullName: demo.label + " User",
-      roles: [demo.role],
-    });
+  const demoLogin = async (demo: typeof DEMO_USERS[0]) => {
+    try {
+      const res = await apiClient.post("/auth/login", {
+        email: demo.email,
+        password: demo.password,
+      });
+      login(res.data.token, res.data.user);
+    } catch {
+      setError("root", { message: `Demo login failed — ensure the API is running and the DB is seeded.` });
+    }
   };
 
   return (

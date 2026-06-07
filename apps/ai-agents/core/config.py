@@ -8,10 +8,13 @@ class Settings(BaseSettings):
     AI_AGENTS_API_KEY: str = "internal-secret"
 
     # LLM
-    ANTHROPIC_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
-    LLM_PROVIDER: str = "anthropic"
-    DEFAULT_MODEL: str = "claude-sonnet-4-6"
+    GEMINI_API_KEY: str = ""
+    LLM_PROVIDER: str = "openai"
+    DEFAULT_MODEL: str = "gpt-4o-mini"
+    # Optional stronger model for design-heavy tasks (email generation + restyle).
+    # Leave empty to use DEFAULT_MODEL. e.g. "gpt-4o" or "gemini-1.5-pro".
+    GENERATION_MODEL: str = ""
 
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/ai_compliance"

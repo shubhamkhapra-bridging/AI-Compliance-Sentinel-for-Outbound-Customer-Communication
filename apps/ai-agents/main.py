@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import settings
 from core.logger import logger
-from routers import draft, compliance, risk, embeddings
+from routers import draft, compliance, risk, embeddings, fix, send, style
 
 
 @asynccontextmanager
@@ -34,6 +34,9 @@ app.include_router(draft.router, prefix="/agents/draft", tags=["Draft"])
 app.include_router(compliance.router, prefix="/agents/compliance", tags=["Compliance"])
 app.include_router(risk.router, prefix="/agents/risk", tags=["Risk"])
 app.include_router(embeddings.router, prefix="/embeddings", tags=["Embeddings"])
+app.include_router(fix.router, prefix="/agents/fix", tags=["Fix"])
+app.include_router(send.router, prefix="/agents/send", tags=["Send"])
+app.include_router(style.router, prefix="/agents/style", tags=["Style"])
 
 
 @app.get("/health", tags=["Health"])

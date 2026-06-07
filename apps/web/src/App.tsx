@@ -6,6 +6,7 @@ import Campaigns from "./pages/Campaigns";
 import Contacts from "./pages/Contacts";
 import Approvals from "./pages/Approvals";
 import Analytics from "./pages/Analytics";
+import EmailHistory from "./pages/EmailHistory";
 import Login from "./pages/Login";
 import { useAuthStore } from "./hooks/useAuthStore";
 
@@ -24,6 +25,7 @@ export default function App() {
         <Route path="/contacts" element={<Contacts />} />
         <Route path="/approvals" element={<Approvals />} />
         <Route path="/analytics" element={<Analytics />} />
+        <Route path="/emails" element={<EmailHistory />} />
       </Routes>
     </Layout>
   );

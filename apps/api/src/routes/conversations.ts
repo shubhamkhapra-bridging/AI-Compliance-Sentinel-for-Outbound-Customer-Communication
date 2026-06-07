@@ -95,12 +95,21 @@ conversationsRouter.post("/:id/messages", async (req, res, next) => {
   }
 });
 
-// Stub — real implementation calls ai-agents service
 async function generateDraft(
   conversationId: string,
   userMessage: string,
   productId: string
 ) {
+  // Fetch product + brand kit so agents can apply proper branding
+  const product = await prisma.product.findUnique({
+    where: { id: productId },
+    include: { brandKit: true },
+  });
+
+  const brandKit = product?.brandKit;
+  const colors   = (brandKit?.colors as Record<string, string> | null) ?? {};
+  const voice    = (brandKit?.voice  as Record<string, string> | null) ?? {};
+
   const agentsUrl = process.env.AI_AGENTS_URL ?? "http://localhost:8000";
   const response = await fetch(`${agentsUrl}/agents/draft`, {
     method: "POST",
@@ -108,7 +117,40 @@ async function generateDraft(
       "Content-Type": "application/json",
       "X-API-Key": process.env.AI_AGENTS_API_KEY ?? "",
     },
-    body: JSON.stringify({ conversationId, userMessage, productId }),
+    body: JSON.stringify({
+      conversationId,
+      userMessage,
+      productId,
+      productSlug:    product?.slug    ?? "unknown",
+      companyName:    product?.name    ?? "BridgingTech",
+      logoUrl:        brandKit?.logoUrl ?? "",
+      websiteUrl:     product?.websiteUrl ?? "",
+      companyAddress: "",
+      brandVoice:     voice,
+      brandColors:    colors,
+    }),
   });
   if (!response.ok) throw new Error(`AI agents error: ${response.status}`);
+
+  const data = await response.json() as {
+    subject: string;
+    bodyHtml: string;
+    bodyText: string;
+  };
+
+  await prisma.emailDraft.updateMany({
+    where: { conversationId, isCurrent: true },
+    data: { isCurrent: false },
+  });
+
+  await prisma.emailDraft.create({
+    data: {
+      conversationId,
+      subject: data.subject,
+      bodyHtml: data.bodyHtml,
+      bodyText: data.bodyText,
+      generatedByAgent: "DraftPipeline",
+      isCurrent: true,
+    },
+  });
 }

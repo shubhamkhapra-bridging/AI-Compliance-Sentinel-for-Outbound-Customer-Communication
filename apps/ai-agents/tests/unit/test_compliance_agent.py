@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 from agents.compliance_agent import ComplianceAgent
 from models.agent_models import AgentInput
 
-_USAGE = {"provider": "anthropic", "input_tokens": 50, "output_tokens": 20, "latency_ms": 100}
+_USAGE = {"provider": "openai", "model": "openai/gpt-4o-mini", "input_tokens": 50, "output_tokens": 20, "latency_ms": 100}
 
 
 @pytest.mark.asyncio
@@ -13,7 +13,7 @@ async def test_clean_email_passes():
         "passed": True, "risk_score": 5, "requires_approval": False,
         "violations": [], "recommendations": [],
     })
-    with patch("tools.llm_client.chat", new_callable=AsyncMock, return_value=(response, _USAGE)):
+    with patch("agents.compliance_agent.chat", new_callable=AsyncMock, return_value=(response, _USAGE)):
         agent = ComplianceAgent()
         out = await agent.run(AgentInput(context={
             "subject": "Account update",
@@ -34,7 +34,7 @@ async def test_missing_unsubscribe_fails():
         "violations": [{"rule": "CAN-SPAM", "severity": "high", "description": "Missing unsubscribe link", "suggestion": "Add footer"}],
         "recommendations": ["Add unsubscribe link"],
     })
-    with patch("tools.llm_client.chat", new_callable=AsyncMock, return_value=(response, _USAGE)):
+    with patch("agents.compliance_agent.chat", new_callable=AsyncMock, return_value=(response, _USAGE)):
         agent = ComplianceAgent()
         out = await agent.run(AgentInput(context={
             "subject": "Special Offer!!!",
@@ -55,7 +55,7 @@ async def test_forbidden_phrase_triggers_violation():
         "violations": [{"rule": "FDCPA", "severity": "high", "description": "Forbidden phrase detected", "suggestion": "Remove threatening language"}],
         "recommendations": [],
     })
-    with patch("tools.llm_client.chat", new_callable=AsyncMock, return_value=(response, _USAGE)):
+    with patch("agents.compliance_agent.chat", new_callable=AsyncMock, return_value=(response, _USAGE)):
         agent = ComplianceAgent()
         out = await agent.run(AgentInput(context={
             "subject": "Pay now or face legal action",
