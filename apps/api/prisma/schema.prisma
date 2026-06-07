@@ -16,6 +16,7 @@ model User {
   id            String    @id @default(uuid())
   email         String    @unique
   fullName      String
+  passwordHash  String?
   ssoProvider   String?
   ssoSubjectId  String?
   active        Boolean   @default(true)
@@ -36,6 +37,7 @@ model User {
   brandKitVersions   BrandKitVersion[]
   emailTemplates     EmailTemplate[]
   segments           Segment[]
+  sentEmails         Email[]            @relation("SentBy")
 
   @@map("users")
 }
@@ -511,14 +513,13 @@ model RiskAssessment {
   updatedAt       DateTime @updatedAt
 
   email            Email             @relation(fields: [emailId], references: [id])
-  approvalRequests ApprovalRequest[]
 
   @@map("risk_assessments")
 }
 
 model ApprovalRequest {
   id                    String    @id @default(uuid())
-  emailId               String
+  emailId               String    @unique
   requestedByUserId     String
   assignedApproverUserId String?
   status                String    @default("pending")
@@ -529,7 +530,6 @@ model ApprovalRequest {
 
   email            Email              @relation(fields: [emailId], references: [id])
   requestedBy      User               @relation("RequestedBy", fields: [requestedByUserId], references: [id])
-  riskAssessment   RiskAssessment?    @relation(fields: [emailId], references: [emailId])
   decisions        ApprovalDecision[]
 
   @@map("approval_requests")
@@ -593,7 +593,7 @@ model Email {
   updatedAt         DateTime  @updatedAt
 
   product        Product          @relation(fields: [productId], references: [id])
-  sender         User             @relation(fields: [senderUserId], references: [id])
+  sender         User             @relation("SentBy", fields: [senderUserId], references: [id])
   sendingAccount SendingAccount?  @relation(fields: [sendingAccountId], references: [id])
   conversation   Conversation?    @relation(fields: [conversationId], references: [id])
   campaign       Campaign?        @relation(fields: [campaignId], references: [id])

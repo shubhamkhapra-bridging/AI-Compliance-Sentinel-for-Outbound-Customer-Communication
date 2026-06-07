@@ -1,52 +1,8 @@
-version: "3.9"
-
 services:
-  # ─── Infrastructure ──────────────────────────────────────────
-  postgres:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ai_compliance
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+  # ─── Infrastructure (managed by docker-compose.infra.yml for local dev) ──
+  # Run infra separately: docker compose -f docker-compose.infra.yml up -d
+  # This file runs only the application services.
 
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  qdrant:
-    image: qdrant/qdrant:v1.9.0
-    restart: unless-stopped
-    ports:
-      - "6333:6333"
-      - "6334:6334"
-    volumes:
-      - qdrant_data:/qdrant/storage
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:6333/healthz || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # ─── Applications ────────────────────────────────────────────
   api:
     build:
       context: ./apps/api
@@ -57,17 +13,15 @@ services:
       - "4000:4000"
     env_file: .env
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ai_compliance
-      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://postgres:postgres@postgres_db:5432/ai_compliance
+      REDIS_URL: redis://redis_server:6379
       AI_AGENTS_URL: http://ai-agents:8000
     volumes:
       - ./apps/api:/app
       - /app/node_modules
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+    extra_hosts:
+      - "postgres_db:host-gateway"
+      - "redis_server:host-gateway"
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:4000/health || exit 1"]
       interval: 15s
@@ -95,28 +49,39 @@ services:
     build:
       context: ./apps/ai-agents
       dockerfile: Dockerfile
+      target: development
     restart: unless-stopped
     ports:
       - "8000:8000"
-    env_file: .env
+    env_file: apps/ai-agents/.env
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ai_compliance
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres_db:5432/ai_compliance
       QDRANT_URL: http://qdrant:6333
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://redis_server:6379
     volumes:
       - ./apps/ai-agents:/app
-    depends_on:
-      postgres:
-        condition: service_healthy
-      qdrant:
-        condition: service_healthy
+    extra_hosts:
+      - "postgres_db:host-gateway"
+      - "redis_server:host-gateway"
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
       interval: 15s
       timeout: 10s
       retries: 3
 
+  qdrant:
+    image: qdrant/qdrant:v1.9.0
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:6333/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
-  postgres_data:
-  redis_data:
   qdrant_data:

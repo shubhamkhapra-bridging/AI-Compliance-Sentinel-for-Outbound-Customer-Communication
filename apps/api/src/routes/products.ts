@@ -1,10 +1,28 @@
 import { Router } from "express";
+import { z } from "zod";
 import { prisma } from "../db/client";
 import { authenticate, requireRole } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
 
 export const productsRouter = Router();
 productsRouter.use(authenticate);
+
+const createProductSchema = z.object({
+  slug: z.string().min(1),
+  name: z.string().min(1),
+  websiteUrl: z.string().url().optional(),
+  sendingDomain: z.string().optional(),
+});
+
+productsRouter.post("/", async (req, res, next) => {
+  try {
+    const data = createProductSchema.parse(req.body);
+    const product = await prisma.product.create({ data });
+    res.status(201).json(product);
+  } catch (err) {
+    next(err);
+  }
+});
 
 productsRouter.get("/", async (_req, res, next) => {
   try {

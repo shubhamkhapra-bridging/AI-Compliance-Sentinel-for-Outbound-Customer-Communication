@@ -1,10 +1,12 @@
-"""Compliance Agent — validates email content against product-specific regulatory rules."""
+"""Agent 5 — Compliance Validation: checks email against product-specific regulations."""
 import json
-from dataclasses import dataclass, field
-from core.llm import chat
+import re
+from agents.base import BaseAgent
+from models.agent_models import AgentInput, AgentOutput
+from tools.llm_client import chat
 
 
-SYSTEM_PROMPT = """You are a compliance officer AI for BridgingTech.
+_SYSTEM = """You are a compliance officer AI for BridgingTech.
 Analyse the provided email content against the given compliance rules.
 
 Rules may include:
@@ -19,6 +21,7 @@ Check for:
 2. Forbidden phrases
 3. Misleading claims
 4. Required disclosures
+5. Threatening or abusive language (FDCPA violation)
 
 Respond ONLY with a JSON object:
 {
@@ -29,62 +32,52 @@ Respond ONLY with a JSON object:
     {"rule": "...", "severity": "low|medium|high", "description": "...", "suggestion": "..."}
   ],
   "recommendations": ["..."]
-}
-"""
+}"""
 
 
-@dataclass
-class ComplianceRequest:
-    subject: str
-    body_html: str
-    product_slug: str
-    regulations: list[str]
-    forbidden_phrases: list[str] = field(default_factory=list)
-    required_footers: list[str] = field(default_factory=list)
+class ComplianceAgent(BaseAgent):
+    name = "compliance_agent"
+    description = "Validates email content against FDCPA, HIPAA, GDPR, CAN-SPAM and brand rules"
 
+    async def run(self, input: AgentInput) -> AgentOutput:
+        ctx = input.context
+        subject = ctx.get("subject", "")
+        body_html = ctx.get("body_html", "")
+        product_slug = ctx.get("product_slug", "unknown")
+        regulations = ctx.get("regulations") or []
+        forbidden_phrases = ctx.get("forbidden_phrases") or []
+        required_footers = ctx.get("required_footers") or []
 
-@dataclass
-class ComplianceResult:
-    passed: bool
-    risk_score: int
-    requires_approval: bool
-    violations: list[dict]
-    recommendations: list[str]
-    usage: dict
+        prompt = f"""Product: {product_slug}
+Applicable regulations: {', '.join(regulations) if regulations else 'CAN-SPAM, GDPR'}
+Forbidden phrases: {forbidden_phrases}
+Required footers: {required_footers}
 
-
-async def check_compliance(req: ComplianceRequest) -> ComplianceResult:
-    prompt = f"""
-Product: {req.product_slug}
-Applicable regulations: {', '.join(req.regulations)}
-Forbidden phrases: {req.forbidden_phrases}
-Required footers: {req.required_footers}
-
-Email Subject: {req.subject}
+Email Subject: {subject}
 
 Email Body (HTML):
-{req.body_html[:3000]}
-"""
+{body_html[:3000]}"""
 
-    raw, usage = await chat(
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": prompt}],
-        agent_type="compliance_agent",
-        max_tokens=1024,
-    )
+        raw, usage = await chat(
+            system=_SYSTEM,
+            messages=[{"role": "user", "content": prompt}],
+            agent_type=self.name,
+            max_tokens=1024,
+        )
 
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError:
-        import re
-        match = re.search(r"\{.*\}", raw, re.DOTALL)
-        parsed = json.loads(match.group()) if match else {}
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            match = re.search(r"\{.*\}", raw, re.DOTALL)
+            parsed = json.loads(match.group()) if match else {}
 
-    return ComplianceResult(
-        passed=parsed.get("passed", False),
-        risk_score=parsed.get("risk_score", 50),
-        requires_approval=parsed.get("requires_approval", True),
-        violations=parsed.get("violations", []),
-        recommendations=parsed.get("recommendations", []),
-        usage=usage,
-    )
+        return AgentOutput(
+            data={
+                "passed": parsed.get("passed", False),
+                "risk_score": parsed.get("risk_score", 50),
+                "requires_approval": parsed.get("requires_approval", True),
+                "violations": parsed.get("violations", []),
+                "recommendations": parsed.get("recommendations", []),
+            },
+            usage=usage,
+        )

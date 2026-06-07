@@ -14,10 +14,12 @@ build/
 # Turbo cache
 .turbo/
 
-# Environment files
+# Environment files — never commit real secrets
 .env
 .env.local
 .env.*.local
+apps/**/.env
+apps/**/.env.local
 
 # Logs
 *.log
@@ -47,3 +49,6 @@ htmlcov/
 *.pyd
 .pytest_cache/
 .mypy_cache/
+
+# Screenshots (large binaries, not source)
+screenshots/

@@ -1,0 +1,94 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -c \"\nimport sys, re, json\n\n# Read the tool input from stdin\ndata = json.load(sys.stdin)\npath = data.get('file_path', '')\ncontent = data.get('new_string', '') or data.get('content', '')\n\nwarnings = []\n\n# Block hardcoded secrets\nsecret_patterns = [\n  (r'(sk-[a-zA-Z0-9]{32,})', 'OpenAI API key'),\n  (r'(SG\\.[a-zA-Z0-9\\-_]{22,})', 'SendGrid API key'),\n  (r'(ANTHROPIC_API_KEY\\s*=\\s*[\\\"\\'][^\\\"\\' ]+[\\\"\\'])', 'Hardcoded Anthropic key'),\n  (r'(password\\s*=\\s*[\\\"\\'][^\\\"\\' ]+[\\\"\\'])', 'Hardcoded password'),\n]\nfor pattern, label in secret_patterns:\n  if re.search(pattern, content):\n    print(f'BLOCKED: {label} detected in {path}. Use environment variables.', file=sys.stderr)\n    sys.exit(2)\n\n# Warn if writing to agents/ without type hints\nif '/agents/' in path and path.endswith('.py'):\n  if 'def ' in content and '->' not in content:\n    warnings.append('Missing return type hint on one or more functions')\n\nif warnings:\n  print('WARNINGS:\\n' + '\\n'.join(f'  - {w}' for w in warnings), file=sys.stderr)\n\nsys.exit(0)\n\""
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -c \"\nimport sys, json\n\ndata = json.load(sys.stdin)\ncmd = data.get('command', '')\n\n# Block dangerous destructive commands\ndangerous = ['DROP TABLE', 'DELETE FROM', 'TRUNCATE', 'rm -rf /', 'format ']\nfor d in dangerous:\n  if d.lower() in cmd.lower():\n    print(f'BLOCKED: Dangerous command detected: {d}', file=sys.stderr)\n    sys.exit(2)\n\n# Warn on pip without --break-system-packages\nif 'pip install' in cmd and '--break-system-packages' not in cmd:\n  print('WARNING: Add --break-system-packages to pip install', file=sys.stderr)\n\nsys.exit(0)\n\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -c \"\nimport sys, json, subprocess\n\ndata = json.load(sys.stdin)\npath = data.get('file_path', '')\n\nif not path.endswith('.py'):\n  sys.exit(0)\n\n# Run ruff lint on modified Python files\ntry:\n  result = subprocess.run(\n    ['ruff', 'check', '--select=E,W,F', path],\n    capture_output=True, text=True, timeout=10\n  )\n  if result.returncode != 0:\n    print(f'RUFF LINT:\\n{result.stdout}', file=sys.stderr)\nexcept FileNotFoundError:\n  pass  # ruff not installed, skip silently\nexcept Exception as e:\n  pass\n\nsys.exit(0)\n\""
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -c \"\nimport sys, json\n\ndata = json.load(sys.stdin)\noutput = data.get('output', '')\n\n# Alert on test failures\nif 'FAILED' in output or 'ERROR' in output:\n  if 'pytest' in data.get('command', ''):\n    print('TEST FAILURES DETECTED — review before proceeding', file=sys.stderr)\n\nsys.exit(0)\n\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -c \"\nimport sys, json, subprocess\n\ndata = json.load(sys.stdin)\n\n# Run full lint pass on agents/ after session ends\ntry:\n  result = subprocess.run(\n    ['ruff', 'check', 'agents/', '--select=E,W,F', '--statistics'],\n    capture_output=True, text=True, timeout=30\n  )\n  if result.stdout.strip():\n    print(f'Final lint summary (agents/):\\n{result.stdout}', file=sys.stderr)\nexcept Exception:\n  pass\n\nsys.exit(0)\n\""
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -c \"import sys, json; data=json.load(sys.stdin); print(f'Claude needs input: {data.get(\\\"message\\\", \\\"\\\")}'); sys.exit(0)\""
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(pytest:*)",
+      "Bash(ruff:*)",
+      "Bash(python:*)",
+      "Bash(pip install*)",
+      "Bash(uvicorn:*)",
+      "Bash(celery:*)",
+      "Bash(alembic:*)",
+      "Bash(docker:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git status:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(cat:*)",
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(curl:*)",
+      "Bash(echo:*)"
+    ],
+    "deny": [
+      "Bash(rm -rf /*)",
+      "Bash(DROP TABLE*)",
+      "Bash(DELETE FROM*)",
+      "Bash(TRUNCATE*)"
+    ]
+  }
+}

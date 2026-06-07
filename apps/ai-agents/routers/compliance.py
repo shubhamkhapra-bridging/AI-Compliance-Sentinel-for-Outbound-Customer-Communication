@@ -1,9 +1,12 @@
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from agents.compliance_agent import ComplianceRequest, check_compliance
+from agents.compliance_agent import ComplianceAgent
+from models.agent_models import AgentInput
 from core.security import verify_api_key
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
+
+_agent = ComplianceAgent()
 
 
 class CompliancePayload(BaseModel):
@@ -19,22 +22,21 @@ class CompliancePayload(BaseModel):
 
 @router.post("")
 async def run_compliance(payload: CompliancePayload):
-    result = await check_compliance(
-        ComplianceRequest(
-            subject=payload.subject,
-            body_html=payload.bodyHtml,
-            product_slug=payload.productSlug,
-            regulations=payload.regulations,
-            forbidden_phrases=payload.forbiddenPhrases,
-            required_footers=payload.requiredFooters,
-        )
-    )
+    out = await _agent.run(AgentInput(context={
+        "subject": payload.subject,
+        "body_html": payload.bodyHtml,
+        "product_slug": payload.productSlug,
+        "regulations": payload.regulations,
+        "forbidden_phrases": payload.forbiddenPhrases,
+        "required_footers": payload.requiredFooters,
+    }))
+
     return {
         "draftId": payload.draftId,
-        "passed": result.passed,
-        "riskScore": result.risk_score,
-        "requiresApproval": result.requires_approval,
-        "violations": result.violations,
-        "recommendations": result.recommendations,
-        "usage": result.usage,
+        "passed": out.data.get("passed", False),
+        "riskScore": out.data.get("risk_score", 50),
+        "requiresApproval": out.data.get("requires_approval", True),
+        "violations": out.data.get("violations", []),
+        "recommendations": out.data.get("recommendations", []),
+        "usage": out.usage,
     }

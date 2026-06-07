@@ -3,7 +3,13 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { apiClient } from "../api/client";
 import { useAuthStore } from "../hooks/useAuthStore";
-import { Mail, Lock, Loader2 } from "lucide-react";
+import { Mail, Lock, Loader2, Zap } from "lucide-react";
+
+const DEMO_USERS = [
+  { label: "Admin",   email: "admin@bridgingtech.com",   password: "Admin@123456",   role: "admin" },
+  { label: "Manager", email: "manager@bridgingtech.com", password: "Manager@123456", role: "manager" },
+  { label: "Sender",  email: "sender@bridgingtech.com",  password: "Sender@123456",  role: "sender" },
+];
 
 const schema = z.object({
   email: z.string().email("Valid email required"),
@@ -18,6 +24,7 @@ export default function Login() {
     handleSubmit,
     formState: { errors, isSubmitting },
     setError,
+    setValue,
   } = useForm<FormData>({ resolver: zodResolver(schema) });
 
   const onSubmit = async (data: FormData) => {
@@ -25,8 +32,17 @@ export default function Login() {
       const res = await apiClient.post("/auth/login", data);
       login(res.data.token, res.data.user);
     } catch {
-      setError("root", { message: "Invalid email or password" });
+      setError("root", { message: "Invalid email or password — or API is offline. Use Demo Login below." });
     }
+  };
+
+  const demoLogin = (demo: typeof DEMO_USERS[0]) => {
+    login("demo-token-" + demo.role, {
+      id: "demo-" + demo.role,
+      email: demo.email,
+      fullName: demo.label + " User",
+      roles: [demo.role],
+    });
   };
 
   return (
@@ -95,6 +111,30 @@ export default function Login() {
               Sign in
             </button>
           </form>
+
+          {/* Demo Login */}
+          <div className="mt-6">
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-200" />
+              </div>
+              <div className="relative flex justify-center text-xs text-gray-400 bg-white px-2">
+                or demo access (no backend needed)
+              </div>
+            </div>
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              {DEMO_USERS.map((d) => (
+                <button
+                  key={d.role}
+                  onClick={() => demoLogin(d)}
+                  className="flex flex-col items-center gap-1 py-2.5 px-2 border border-gray-200 rounded-lg hover:border-brand-400 hover:bg-brand-50 transition-colors group"
+                >
+                  <Zap className="w-3.5 h-3.5 text-brand-500 group-hover:text-brand-600" />
+                  <span className="text-xs font-medium text-gray-700">{d.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </div>

@@ -1,25 +1,24 @@
+"""Embeddings router — Qdrant-backed vector index and semantic search for email templates."""
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from qdrant_client import AsyncQdrantClient
-from qdrant_client.models import Distance, VectorParams, PointStruct
-import anthropic
+from qdrant_client.models import PointStruct, Filter, FieldCondition, MatchValue
+import litellm
 from core.config import settings
 from core.security import verify_api_key
-import uuid
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 
 _qdrant = AsyncQdrantClient(url=settings.QDRANT_URL, api_key=settings.QDRANT_API_KEY or None)
-_anthropic = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
-
 COLLECTION = "email_templates"
-VECTOR_DIM = 1536
 
 
-async def embed(text: str) -> list[float]:
-    # Use OpenAI text-embedding-3-small via LiteLLM for cost efficiency
-    import litellm
-    response = await litellm.aembedding(model="text-embedding-3-small", input=[text])
+async def _embed(text: str) -> list[float]:
+    response = await litellm.aembedding(
+        model="text-embedding-3-small",
+        input=[text],
+        api_key=settings.OPENAI_API_KEY or None,
+    )
     return response.data[0]["embedding"]
 
 
@@ -37,7 +36,7 @@ class SearchPayload(BaseModel):
 
 @router.post("/index")
 async def index_document(payload: IndexPayload):
-    vector = await embed(payload.text)
+    vector = await _embed(payload.text)
     await _qdrant.upsert(
         collection_name=COLLECTION,
         points=[PointStruct(id=payload.id, vector=vector, payload=payload.metadata)],
@@ -47,10 +46,9 @@ async def index_document(payload: IndexPayload):
 
 @router.post("/search")
 async def search_similar(payload: SearchPayload):
-    vector = await embed(payload.query)
+    vector = await _embed(payload.query)
     filter_cond = None
     if payload.productId:
-        from qdrant_client.models import Filter, FieldCondition, MatchValue
         filter_cond = Filter(
             must=[FieldCondition(key="product_id", match=MatchValue(value=payload.productId))]
         )

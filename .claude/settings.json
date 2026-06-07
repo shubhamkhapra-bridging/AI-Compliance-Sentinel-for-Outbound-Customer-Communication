@@ -1,0 +1,89 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -c \"\nimport sys, re, json\n\ndata = json.load(sys.stdin)\npath = data.get('file_path', '')\ncontent = data.get('new_string', '') or data.get('content', '')\n\n# Block hardcoded secrets\nsecret_patterns = [\n  (r'sk-[a-zA-Z0-9]{32,}', 'OpenAI API key'),\n  (r'SG\\.[a-zA-Z0-9\\-_]{22,}', 'SendGrid API key'),\n  (r'sk-ant-[a-zA-Z0-9\\-_]{20,}', 'Anthropic API key'),\n  (r'ANTHROPIC_API_KEY\\s*=\\s*[\\\"\\'][^\\\"\\' ]{10,}[\\\"\\']', 'Hardcoded Anthropic key'),\n  (r'password\\s*=\\s*[\\\"\\'][^\\\"\\' ]{4,}[\\\"\\']', 'Hardcoded password'),\n]\nfor pattern, label in secret_patterns:\n  if re.search(pattern, content):\n    print(f'BLOCKED: {label} detected in {path}. Use environment variables.', file=sys.stderr)\n    sys.exit(2)\n\n# Warn on Python agents missing return type hints\nwarnings = []\nif '/agents/' in path and path.endswith('.py'):\n  if 'def ' in content and '->' not in content:\n    warnings.append('Missing return type hint on one or more functions')\n\nif warnings:\n  print('WARNINGS:\\n' + '\\n'.join(f'  - {w}' for w in warnings), file=sys.stderr)\n\nsys.exit(0)\n\""
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -c \"\nimport sys, json\n\ndata = json.load(sys.stdin)\ncmd = data.get('command', '')\n\ndangerous = ['DROP TABLE', 'DELETE FROM', 'TRUNCATE', 'rm -rf /', 'format C']\nfor d in dangerous:\n  if d.lower() in cmd.lower():\n    print(f'BLOCKED: Dangerous command detected: {d}', file=sys.stderr)\n    sys.exit(2)\n\nsys.exit(0)\n\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -c \"\nimport sys, json, subprocess\n\ndata = json.load(sys.stdin)\npath = data.get('file_path', '')\n\nif not path.endswith('.py'):\n  sys.exit(0)\n\ntry:\n  result = subprocess.run(\n    ['ruff', 'check', '--select=E,W,F', path],\n    capture_output=True, text=True, timeout=10\n  )\n  if result.returncode != 0:\n    print(f'RUFF LINT:\\n{result.stdout}', file=sys.stderr)\nexcept FileNotFoundError:\n  pass\nexcept Exception:\n  pass\n\nsys.exit(0)\n\""
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -c \"\nimport sys, json\n\ndata = json.load(sys.stdin)\noutput = data.get('output', '')\n\nif 'FAILED' in output or 'ERROR' in output:\n  cmd = data.get('command', '')\n  if 'pytest' in cmd or 'vitest' in cmd or 'npm test' in cmd:\n    print('TEST FAILURES DETECTED — review before proceeding', file=sys.stderr)\n\nsys.exit(0)\n\""
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(npm *)",
+      "Bash(npx *)",
+      "Bash(node *)",
+      "Bash(pytest *)",
+      "Bash(ruff *)",
+      "Bash(python *)",
+      "Bash(python3 *)",
+      "Bash(pip *)",
+      "Bash(uvicorn *)",
+      "Bash(alembic *)",
+      "Bash(docker *)",
+      "Bash(docker compose *)",
+      "Bash(docker ps *)",
+      "Bash(docker exec *)",
+      "Bash(docker logs *)",
+      "Bash(docker pull *)",
+      "Bash(git log *)",
+      "Bash(git diff *)",
+      "Bash(git status *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(curl *)",
+      "Bash(ls *)",
+      "Bash(find *)",
+      "Bash(grep *)",
+      "Bash(cat *)",
+      "Bash(echo *)",
+      "Bash(mkdir *)",
+      "Bash(cp *)",
+      "Bash(mv *)",
+      "Skill(run)",
+      "Skill(verify)",
+      "Skill(code-review)"
+    ],
+    "deny": [
+      "Bash(rm -rf /*)",
+      "Bash(DROP TABLE*)",
+      "Bash(DELETE FROM*)",
+      "Bash(TRUNCATE*)",
+      "Bash(format C*)"
+    ]
+  }
+}

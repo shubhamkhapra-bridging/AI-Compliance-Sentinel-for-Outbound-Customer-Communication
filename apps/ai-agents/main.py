@@ -9,31 +9,38 @@ from routers import draft, compliance, risk, embeddings
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("AI Agents service starting", env=settings.ENV)
+    logger.info("ai_agents_starting", env=settings.ENV, model=settings.DEFAULT_MODEL)
     yield
-    logger.info("AI Agents service shutting down")
+    logger.info("ai_agents_shutting_down")
 
 
 app = FastAPI(
     title="AI Compliance Sentinel — Agents",
+    description="10-agent email generation, compliance, and deliverability pipeline for BridgingTech",
     version="1.0.0",
     docs_url="/docs" if settings.ENV != "production" else None,
+    redoc_url="/redoc" if settings.ENV != "production" else None,
     lifespan=lifespan,
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:4000"],
-    allow_methods=["*"],
+    allow_origins=["http://localhost:4000", "http://api:4000"],
+    allow_methods=["POST", "GET"],
     allow_headers=["*"],
 )
 
-app.include_router(draft.router, prefix="/agents/draft", tags=["Draft Agent"])
-app.include_router(compliance.router, prefix="/agents/compliance", tags=["Compliance Agent"])
-app.include_router(risk.router, prefix="/agents/risk", tags=["Risk Agent"])
+app.include_router(draft.router, prefix="/agents/draft", tags=["Draft"])
+app.include_router(compliance.router, prefix="/agents/compliance", tags=["Compliance"])
+app.include_router(risk.router, prefix="/agents/risk", tags=["Risk"])
 app.include_router(embeddings.router, prefix="/embeddings", tags=["Embeddings"])
 
 
-@app.get("/health")
-def health():
-    return {"status": "ok"}
+@app.get("/health", tags=["Health"])
+async def health():
+    return {
+        "status": "ok",
+        "env": settings.ENV,
+        "model": settings.DEFAULT_MODEL,
+        "kafka_enabled": settings.KAFKA_ENABLED,
+    }
