@@ -3,7 +3,95 @@
 @tailwind utilities;
 
 @layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
   body {
-    @apply bg-gray-50 text-gray-900 antialiased;
+    @apply bg-canvas text-ink antialiased;
+    font-family: theme("fontFamily.sans");
+    font-feature-settings: "cv11", "ss01";
+  }
+
+  h1, h2, h3, h4 {
+    font-family: theme("fontFamily.display");
+    @apply tracking-tight text-ink;
+  }
+
+  /* Numbers, metrics and code read as tabular mono */
+  .tnum {
+    font-family: theme("fontFamily.mono");
+    font-feature-settings: "tnum";
+    @apply tracking-tight;
+  }
+
+  ::selection {
+    @apply bg-brand-500/20 text-brand-700;
+  }
+
+  /* Refined, unobtrusive scrollbars */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #cfd3de transparent;
+  }
+  *::-webkit-scrollbar { width: 10px; height: 10px; }
+  *::-webkit-scrollbar-thumb {
+    background: #d4d8e2;
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 9999px;
+  }
+  *::-webkit-scrollbar-thumb:hover { background: #b9bfcd; background-clip: content-box; }
+}
+
+@layer components {
+  /* ── Containers ─────────────────────────────────────────────── */
+  .card {
+    @apply rounded-2xl border border-line bg-surface shadow-card;
+  }
+  .card-hover {
+    @apply transition-all duration-300 hover:-translate-y-0.5 hover:shadow-card-hover hover:border-line;
+  }
+  .panel-pad { @apply p-5 sm:p-6; }
+
+  /* ── Eyebrow / section labels ───────────────────────────────── */
+  .eyebrow {
+    @apply text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint;
+  }
+
+  /* ── Badges ─────────────────────────────────────────────────── */
+  .badge {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset;
+  }
+  .badge-success { @apply bg-success-50 text-success-700 ring-success-100; }
+  .badge-warn    { @apply bg-warn-50 text-warn-700 ring-warn-100; }
+  .badge-danger  { @apply bg-danger-50 text-danger-700 ring-danger-100; }
+  .badge-brand   { @apply bg-brand-50 text-brand-700 ring-brand-100; }
+  .badge-neutral { @apply bg-ink/[0.04] text-ink-soft ring-line; }
+
+  /* ── Buttons ────────────────────────────────────────────────── */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold
+           transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50
+           disabled:cursor-not-allowed disabled:opacity-60;
+  }
+  .btn-primary {
+    @apply bg-brand-600 text-white shadow-[0_6px_18px_-6px_rgba(75,75,196,0.7)]
+           hover:bg-brand-700 active:translate-y-px;
+  }
+  .btn-ghost {
+    @apply border border-line bg-surface text-ink-soft hover:bg-ink/[0.03] hover:text-ink;
+  }
+
+  /* ── Stat icon chip ─────────────────────────────────────────── */
+  .chip {
+    @apply inline-flex h-10 w-10 items-center justify-center rounded-xl;
+  }
+
+  /* Subtle dotted grid backdrop for content areas */
+  .bg-grid {
+    background-image: radial-gradient(rgba(12, 17, 29, 0.045) 1px, transparent 1px);
+    background-size: 22px 22px;
   }
 }

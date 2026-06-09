@@ -1,6 +1,11 @@
-"""Email provider abstraction — SendGrid primary, SES and Mailgun adapters available."""
+"""Email provider abstraction — SMTP and SendGrid primary, SES and Mailgun adapters available."""
+from email.message import EmailMessage
+from email.utils import formataddr, make_msgid
 from typing import Protocol
+
+import aiosmtplib
 import httpx
+
 from core.config import settings
 from core.logger import logger
 
@@ -65,6 +70,53 @@ class SendGridProvider:
         return SendResult(success=False, error=resp.text)
 
 
+class SmtpProvider:
+    """Global SMTP provider — one account (e.g. Gmail) used for all products.
+
+    The per-product ``from_email`` is intentionally overridden with the global
+    ``SMTP_FROM`` so the envelope sender always matches the authenticated mailbox
+    (required by Gmail).
+    """
+
+    async def send(
+        self,
+        *,
+        from_email: str,
+        to_email: str,
+        subject: str,
+        html_body: str,
+        text_body: str = "",
+    ) -> SendResult:
+        sender = settings.SMTP_FROM or settings.SMTP_USER
+
+        msg = EmailMessage()
+        msg["From"] = formataddr((settings.SMTP_FROM_NAME, sender))
+        msg["To"] = to_email
+        msg["Subject"] = subject
+        message_id = make_msgid()
+        msg["Message-ID"] = message_id
+        # Plain-text part first, HTML as the alternative — renders everywhere.
+        msg.set_content(text_body or "Please view this email in an HTML-capable client.")
+        msg.add_alternative(html_body, subtype="html")
+
+        try:
+            await aiosmtplib.send(
+                msg,
+                hostname=settings.SMTP_HOST,
+                port=settings.SMTP_PORT,
+                username=settings.SMTP_USER,
+                password=settings.SMTP_PASSWORD,
+                start_tls=settings.SMTP_STARTTLS,
+                timeout=20,
+            )
+        except Exception as exc:  # noqa: BLE001 — surface any SMTP failure as a SendResult
+            logger.error("email_send_failed", provider="smtp", to=to_email, error=str(exc))
+            return SendResult(success=False, error=str(exc))
+
+        logger.info("email_sent", provider="smtp", to=to_email, message_id=message_id)
+        return SendResult(success=True, message_id=message_id)
+
+
 class LogOnlyProvider:
     """Fallback provider for development — logs instead of sending."""
 
@@ -87,6 +139,8 @@ class LogOnlyProvider:
 
 
 def get_provider() -> EmailProvider:
+    if settings.SMTP_HOST and settings.SMTP_USER:
+        return SmtpProvider()
     if settings.SENDGRID_API_KEY:
         return SendGridProvider()
     return LogOnlyProvider()

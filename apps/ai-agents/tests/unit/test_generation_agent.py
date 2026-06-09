@@ -5,9 +5,18 @@ from agents.generation_agent import GenerationAgent
 from models.agent_models import AgentInput
 
 _USAGE = {"provider": "gemini", "model": "openai/gemini-1.5-flash", "input_tokens": 200, "output_tokens": 150, "latency_ms": 300}
+# GenerationAgent produces STRUCTURED content; the template engine renders the
+# HTML (and the compliant unsubscribe footer) downstream in the orchestrator.
 _DRAFT = json.dumps({
     "subject": "Follow-up on your loan application",
-    "body_html": "<p>Dear John,</p><p>We wanted to follow up on your recent application.</p><a href='{{unsubscribe_url}}'>Unsubscribe</a>",
+    "preheader": "A quick note about your application",
+    "headline": "An update on your application",
+    "body_paragraphs": [
+        "Dear John,",
+        "We wanted to follow up on your recent application.",
+    ],
+    "cta_text": "View Application",
+    "cta_url": "{{cta_url}}",
     "body_text": "Dear John, We wanted to follow up on your recent application.",
 })
 
@@ -24,14 +33,15 @@ async def test_generates_complete_draft():
         }))
 
     assert out.data["subject"] != ""
-    assert out.data["body_html"] != ""
+    assert out.data["headline"] != ""
+    assert out.data["body_paragraphs"]            # non-empty list of paragraphs
     assert out.data["body_text"] != ""
-    assert "unsubscribe" in out.data["body_html"].lower()
+    assert out.data["cta_text"] != ""
 
 
 @pytest.mark.asyncio
 async def test_handles_malformed_llm_response():
-    malformed = '```json\n{"subject": "Test", "body_html": "<p>Hi</p>", "body_text": "Hi"}\n```'
+    malformed = '```json\n{"subject": "Test", "headline": "Hi", "body_paragraphs": ["Hi"], "body_text": "Hi"}\n```'
     with patch("agents.generation_agent.chat", new_callable=AsyncMock, return_value=(malformed, _USAGE)):
         agent = GenerationAgent()
         out = await agent.run(AgentInput(context={
@@ -39,7 +49,7 @@ async def test_handles_malformed_llm_response():
             "product_slug": "denefits",
         }))
 
-    assert out.data.get("subject") != "" or out.data.get("body_html") != ""
+    assert out.data.get("subject") != "" or out.data.get("body_paragraphs")
 
 
 @pytest.mark.asyncio

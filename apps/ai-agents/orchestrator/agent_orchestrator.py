@@ -12,11 +12,13 @@ from agents.recipient_agent import RecipientAgent
 from agents.generation_agent import GenerationAgent
 from agents.compliance_agent import ComplianceAgent
 from agents.deliverability_agent import DeliverabilityAgent
+from agents.web_knowledge_agent import WebKnowledgeAgent
 from models.agent_models import AgentInput
 from tools.email_template import (
     DEFAULT_STYLE,
     render_with_recipe,
     plain_text_from_paragraphs,
+    select_template,
 )
 from core.logger import logger
 
@@ -47,9 +49,11 @@ class DraftPipeline:
         self._generation    = GenerationAgent()
         self._compliance    = ComplianceAgent()
         self._deliverability = DeliverabilityAgent()
+        self._web_knowledge = WebKnowledgeAgent()
 
     async def run(self, payload: dict) -> dict:
         user_message    = payload.get("userMessage", "")
+        product_id      = payload.get("productId", "")
         product_slug    = payload.get("productSlug", "unknown")
         company_name    = payload.get("companyName") or product_slug.title()
         brand_voice     = payload.get("brandVoice") or {}
@@ -64,23 +68,36 @@ class DraftPipeline:
 
         logger.info("draft_pipeline_start", product=product_slug)
 
-        # Step 1 + 2 — intent and recipient profile in parallel
-        intent_out, recipient_out = await asyncio.gather(
+        # Step 1 + 2 + web knowledge — in parallel
+        intent_out, recipient_out, web_out = await asyncio.gather(
             self._intent.run(AgentInput(context={
                 "user_message": user_message, "product_slug": product_slug,
             })),
             self._recipient.run(AgentInput(context={
                 "contact": contact, "email_history": payload.get("emailHistory"),
             })),
+            self._web_knowledge.run(AgentInput(context={
+                "product_id": product_id, "product_slug": product_slug, "website_url": website_url,
+            })),
         )
 
-        # Resolve style: brand kit defaults, then any chat-specified colors override
+        # Brand assets auto-extracted from the product website (best effort)
+        web_knowledge: dict = web_out.data.get("knowledge", {}) if web_out else {}
+        web_colors: dict = web_knowledge.get("brand_colors") or {}
+        if web_knowledge.get("logo_url") and not logo_url:
+            logo_url = web_knowledge["logo_url"]
+        web_address = (web_knowledge.get("contact_info") or {}).get("address")
+        if web_address:
+            company_address = web_address
+
+        # Resolve style. Priority: chat override > website-extracted > brand kit/defaults.
+        merged_colors = {**brand_colors, **{k: v for k, v in web_colors.items() if v}}
         style_overrides = intent_out.data.get("style_overrides") or {}
         style: dict[str, str] = {
             **DEFAULT_STYLE,
-            "primary_color": _pick(brand_colors, "primary", DEFAULT_STYLE["primary_color"]),
-            "accent_color":  _pick(brand_colors, "accent",  _pick(brand_colors, "primary", DEFAULT_STYLE["accent_color"])),
-            "button_color":  _pick(brand_colors, "button",  _pick(brand_colors, "primary", DEFAULT_STYLE["button_color"])),
+            "primary_color": _pick(merged_colors, "primary", DEFAULT_STYLE["primary_color"]),
+            "accent_color":  _pick(merged_colors, "accent",  _pick(merged_colors, "primary", DEFAULT_STYLE["accent_color"])),
+            "button_color":  _pick(merged_colors, "button",  _pick(merged_colors, "primary", DEFAULT_STYLE["button_color"])),
         }
         if style_overrides.get("primary_color"):
             style["primary_color"] = style_overrides["primary_color"]
@@ -109,11 +126,14 @@ class DraftPipeline:
         cta_text  = gen_out.data.get("cta_text", "")
         cta_url   = gen_out.data.get("cta_url", "#")
 
-        # Step 4 — build content dict + render branded HTML with embedded recipe
+        # Step 4 — build content dict + render branded HTML with embedded recipe.
+        # The layout variant is chosen from intent and stored so restyle/fix keep it.
+        intent_value = intent_out.data.get("intent", "")
         content = {
             "subject":         subject,
             "preheader":       gen_out.data.get("preheader", ""),
-            "intent":          intent_out.data.get("intent", ""),
+            "intent":          intent_value,
+            "template":        select_template(intent_value),
             "headline":        headline,
             "body_paragraphs": paragraphs,
             "details":         _build_details(intent_out.data.get("entities")),

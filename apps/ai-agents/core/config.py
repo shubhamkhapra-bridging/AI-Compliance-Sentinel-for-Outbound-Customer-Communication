@@ -34,6 +34,15 @@ class Settings(BaseSettings):
     MAILGUN_API_KEY: str = ""
     MAILGUN_DOMAIN: str = ""
 
+    # SMTP (global account — used for all products)
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = ""          # global From; for Gmail must equal SMTP_USER (or a verified alias)
+    SMTP_FROM_NAME: str = "BridgingTech"
+    SMTP_STARTTLS: bool = True   # True for Gmail port 587; set False + use port 465 for implicit TLS
+
     # Kafka (opt-in)
     KAFKA_ENABLED: bool = False
     KAFKA_BOOTSTRAP_SERVERS: str = "localhost:9092"

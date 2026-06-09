@@ -38,6 +38,7 @@ model User {
   emailTemplates     EmailTemplate[]
   segments           Segment[]
   sentEmails         Email[]            @relation("SentBy")
+  tenants            Tenant[]
 
   @@map("users")
 }
@@ -815,4 +816,72 @@ model AuditLog {
   @@index([userId, occurredAt])
   @@index([entityType, entityId])
   @@map("audit_logs")
+}
+
+// ─── Domain 11: Email Validation API (multi-tenant public surface) ──
+
+model Tenant {
+  id                   String   @id @default(uuid())
+  name                 String
+  email                String   @unique
+  ownerUserId          String?
+  llmProvider          String?
+  llmApiKeyEncrypted   String?  // AES-256-GCM ciphertext — never plaintext
+  llmModel             String?
+  googleChatWebhookUrl String?
+  active               Boolean  @default(true)
+  totalValidations     Int      @default(0)
+  totalPassed          Int      @default(0)
+  totalFlagged         Int      @default(0)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  owner       User?             @relation(fields: [ownerUserId], references: [id])
+  apiKeys     ApiKey[]
+  validations EmailValidation[]
+
+  @@index([ownerUserId])
+  @@map("tenants")
+}
+
+model ApiKey {
+  id         String    @id @default(uuid())
+  tenantId   String
+  keyHash    String    @unique // sha256 of the plaintext key
+  keyPrefix  String              // first chars, shown in UI for identification
+  name       String
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("api_keys")
+}
+
+model EmailValidation {
+  id               String   @id @default(uuid())
+  tenantId         String
+  apiKeyId         String?
+  subject          String
+  bodyHash         String   // sha256 of the submitted body — raw body not stored
+  bodyPreview      String?  // truncated, optional
+  passed           Boolean
+  riskScore        Int      @default(0)
+  issues           Json     @default("[]") // [{type,what,why,howToFix,severity}]
+  correctedSubject String?
+  correctedBody    String?
+  notified         Boolean  @default(false)
+  llmProvider      String?
+  llmModel         String?
+  inputTokens      Int      @default(0)
+  outputTokens     Int      @default(0)
+  createdAt        DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, passed])
+  @@map("email_validations")
 }

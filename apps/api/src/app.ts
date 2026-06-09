@@ -14,6 +14,9 @@ import { campaignsRouter } from "./routes/campaigns";
 import { templatesRouter } from "./routes/templates";
 import { approvalsRouter } from "./routes/approvals";
 import { analyticsRouter } from "./routes/analytics";
+import { validateRouter } from "./routes/validate";
+import { tenantsRouter } from "./routes/tenants";
+import { tenantSettingsRouter, validationsRouter } from "./routes/tenantSettings";
 import { errorHandler } from "./middleware/errorHandler";
 import { notFound } from "./middleware/notFound";
 
@@ -44,10 +47,28 @@ export function createApp() {
     })
   );
 
+  // ─── Public API rate limiting (API-key plane) ──────────────
+  app.use(
+    "/v1",
+    rateLimit({
+      windowMs: 15 * 60 * 1000,
+      max: 200,
+      standardHeaders: true,
+      legacyHeaders: false,
+      keyGenerator: (req) => req.header("x-api-key") ?? req.ip ?? "anonymous",
+    })
+  );
+
   // ─── Health ────────────────────────────────────────────────
   app.get("/health", (_req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
+
+  // ─── Public API v1 (API-key auth) ──────────────────────────
+  const pub = express.Router();
+  pub.use("/validate", validateRouter);
+  pub.use("/tenants", tenantsRouter);
+  app.use("/v1", pub);
 
   // ─── API v1 Routes ─────────────────────────────────────────
   const v1 = express.Router();
@@ -60,6 +81,8 @@ export function createApp() {
   v1.use("/templates", templatesRouter);
   v1.use("/approvals", approvalsRouter);
   v1.use("/analytics", analyticsRouter);
+  v1.use("/tenants", tenantSettingsRouter);
+  v1.use("/validations", validationsRouter);
 
   app.use("/api/v1", v1);
 

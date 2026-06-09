@@ -13,7 +13,8 @@ async def publish_event(event: object) -> None:
     payload = dataclasses.asdict(event) if dataclasses.is_dataclass(event) else vars(event)
 
     if not settings.KAFKA_ENABLED:
-        logger.debug("kafka_event_skipped_not_enabled", event=payload)
+        # NB: "event" is structlog's reserved positional field — use a different key.
+        logger.debug("kafka_event_skipped_not_enabled", event_payload=payload)
         return
 
     try:
@@ -30,4 +31,4 @@ async def publish_event(event: object) -> None:
         logger.info("kafka_event_published", topic=topic)
 
     except Exception as exc:
-        logger.error("kafka_publish_failed", error=str(exc), event=payload)
+        logger.error("kafka_publish_failed", error=str(exc), event_payload=payload)

@@ -56,13 +56,18 @@ async def chat(
     model: str | None = None,
     max_tokens: int = 2048,
     agent_type: str = "unknown",
+    api_key_override: str | None = None,
 ) -> tuple[str, dict]:
-    """Call LLM and return (response_text, usage_dict)."""
+    """Call LLM and return (response_text, usage_dict).
+
+    Pass ``api_key_override`` to use a caller-supplied key (e.g. a tenant's own
+    OpenAI/Gemini key) instead of the service default. The key is never logged.
+    """
     chosen_model = _resolve_model(model)
     start = time.monotonic()
 
     is_gemini = _is_gemini(chosen_model)
-    api_key = (settings.GEMINI_API_KEY if is_gemini else settings.OPENAI_API_KEY) or None
+    api_key = api_key_override or (settings.GEMINI_API_KEY if is_gemini else settings.OPENAI_API_KEY) or None
 
     kwargs: dict = {
         "model": chosen_model,

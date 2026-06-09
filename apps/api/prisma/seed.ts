@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { getBrandDefault } from "../src/lib/brandDefaults";
 
 const prisma = new PrismaClient();
 
@@ -62,10 +63,30 @@ async function main() {
   ];
 
   for (const p of products) {
-    await prisma.product.upsert({
+    const brand = getBrandDefault(p.slug);
+    const product = await prisma.product.upsert({
       where: { slug: p.slug },
-      update: {},
-      create: p,
+      update: { websiteUrl: brand.websiteUrl },
+      create: { ...p, websiteUrl: brand.websiteUrl },
+    });
+
+    // Per-product BrandKit — colors, logo, tone + mailing address in the footer
+    await prisma.brandKit.upsert({
+      where: { productId: product.id },
+      update: {
+        colors: brand.colors,
+        logoUrl: brand.logoUrl || null,
+        voice: brand.voice,
+        footerHtml: brand.address,
+      },
+      create: {
+        productId: product.id,
+        colors: brand.colors,
+        typography: { headingFont: "Geist", bodyFont: "Geist" },
+        logoUrl: brand.logoUrl || null,
+        voice: brand.voice,
+        footerHtml: brand.address,
+      },
     });
   }
 

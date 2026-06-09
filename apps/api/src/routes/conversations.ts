@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "../db/client";
 import { authenticate } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
+import { getBrandDefault } from "../lib/brandDefaults";
 
 export const conversationsRouter = Router();
 conversationsRouter.use(authenticate);
@@ -106,9 +107,13 @@ async function generateDraft(
     include: { brandKit: true },
   });
 
+  // Per-product brand baseline (colors / address / website / voice). The DB
+  // BrandKit, if present, overrides these; website auto-extraction (in the
+  // Python pipeline) may further refine colors + logo at generation time.
+  const defaults = getBrandDefault(product?.slug);
   const brandKit = product?.brandKit;
-  const colors   = (brandKit?.colors as Record<string, string> | null) ?? {};
-  const voice    = (brandKit?.voice  as Record<string, string> | null) ?? {};
+  const colors   = { ...defaults.colors, ...((brandKit?.colors as Record<string, string> | null) ?? {}) };
+  const voice    = { ...defaults.voice,  ...((brandKit?.voice  as Record<string, string> | null) ?? {}) };
 
   const agentsUrl = process.env.AI_AGENTS_URL ?? "http://localhost:8000";
   const response = await fetch(`${agentsUrl}/agents/draft`, {
@@ -123,9 +128,9 @@ async function generateDraft(
       productId,
       productSlug:    product?.slug    ?? "unknown",
       companyName:    product?.name    ?? "BridgingTech",
-      logoUrl:        brandKit?.logoUrl ?? "",
-      websiteUrl:     product?.websiteUrl ?? "",
-      companyAddress: "",
+      logoUrl:        brandKit?.logoUrl ?? defaults.logoUrl,
+      websiteUrl:     product?.websiteUrl ?? defaults.websiteUrl,
+      companyAddress: defaults.address,
       brandVoice:     voice,
       brandColors:    colors,
     }),

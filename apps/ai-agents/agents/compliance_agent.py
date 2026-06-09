@@ -6,6 +6,31 @@ from models.agent_models import AgentInput, AgentOutput
 from tools.llm_client import chat
 
 
+def _html_to_text(html: str) -> str:
+    """Reduce a branded HTML email to its visible text for compliance analysis.
+
+    The branded template carries heavy inline CSS and the CAN-SPAM/GDPR footer
+    (unsubscribe link, physical address, opt-in disclosure) lives at the very end
+    of a ~6KB document. Evaluating raw HTML with a length cap silently truncates
+    that footer, so the model keeps reporting the footer as "missing". Stripping
+    to visible text keeps the whole email (footer included) in far fewer tokens.
+    Anchor targets are surfaced as "label (url)" so real links can be verified.
+    """
+    if not html:
+        return ""
+    text = re.sub(r"<(head|style|script)[^>]*>.*?</\1>", " ", html,
+                  flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(
+        r'<a[^>]*href="([^"]*)"[^>]*>(.*?)</a>',
+        lambda m: f"{re.sub('<[^>]+>', '', m.group(2)).strip()} ({m.group(1)})",
+        text, flags=re.DOTALL | re.IGNORECASE,
+    )
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = (text.replace("&nbsp;", " ").replace("&middot;", "·")
+                .replace("&amp;", "&").replace("&zwnj;", "").replace("&copy;", "©"))
+    return re.sub(r"\s+", " ", text).strip()
+
+
 _SYSTEM = """You are a compliance officer AI for BridgingTech.
 Analyse the provided email content against the given compliance rules.
 
@@ -48,6 +73,11 @@ class ComplianceAgent(BaseAgent):
         forbidden_phrases = ctx.get("forbidden_phrases") or []
         required_footers = ctx.get("required_footers") or []
 
+        # Evaluate the FULL email as visible text — raw-HTML truncation used to cut
+        # off the footer (unsubscribe link, address, opt-in disclosure) and cause
+        # false CAN-SPAM/GDPR violations that no fix could ever clear.
+        body_text = _html_to_text(body_html)
+
         prompt = f"""Product: {product_slug}
 Applicable regulations: {', '.join(regulations) if regulations else 'CAN-SPAM, GDPR'}
 Forbidden phrases: {forbidden_phrases}
@@ -55,8 +85,8 @@ Required footers: {required_footers}
 
 Email Subject: {subject}
 
-Email Body (HTML):
-{body_html[:3000]}"""
+Email Body (visible text, links shown as "label (url)"):
+{body_text[:6000]}"""
 
         raw, usage = await chat(
             system=_SYSTEM,

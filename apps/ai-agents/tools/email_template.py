@@ -45,6 +45,22 @@ _INTENT_LABELS = {
     "support":           "Support",
 }
 
+# Email intent → layout variant. All variants share the same compliant footer;
+# only the hero / emphasis / CTA treatment changes.
+_INTENT_TEMPLATE = {
+    "promotional":       "promotional",
+    "payment_reminder":  "payment",
+    "compliance_notice": "notice",
+    "follow_up":         "standard",
+    "introduction":      "standard",
+    "support":           "standard",
+}
+
+
+def select_template(intent: str | None) -> str:
+    """Pick a layout variant from the email intent."""
+    return _INTENT_TEMPLATE.get((intent or "").strip(), "standard")
+
 _TEMPLATE = """\
 <!DOCTYPE html>
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
@@ -72,7 +88,7 @@ _TEMPLATE = """\
 
           <!-- HEADER -->
           <tr>
-            <td style="background-color:{{ primary_color }};padding:30px 40px;text-align:center;">
+            <td style="background-color:{{ primary_color }};padding:{% if template == 'promotional' %}34px 40px{% else %}30px 40px{% endif %};text-align:center;">
               {% if logo_url %}
               <img src="{{ logo_url }}" alt="{{ company_name }}" height="42" style="display:block;margin:0 auto;max-width:220px;height:42px;object-fit:contain;border:0;" />
               {% else %}
@@ -81,7 +97,30 @@ _TEMPLATE = """\
             </td>
           </tr>
 
-          <!-- HEADLINE -->
+          {% if template == 'promotional' %}
+          <!-- PROMOTIONAL HERO -->
+          <tr>
+            <td style="background-color:{{ primary_color }};padding:0 40px 40px 40px;text-align:center;">
+              {% if intent_label %}
+              <p style="margin:0 0 14px;color:rgba(255,255,255,0.85);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:2px;">{{ intent_label }}</p>
+              {% endif %}
+              <h1 style="margin:0;color:#ffffff;font-size:34px;font-weight:800;line-height:1.2;letter-spacing:-0.6px;">{{ headline }}</h1>
+            </td>
+          </tr>
+          {% elif template == 'notice' %}
+          <!-- COMPLIANCE NOTICE BANNER -->
+          <tr>
+            <td style="padding:32px 48px 0 48px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-left:4px solid {{ accent_color }};background-color:{{ bg_color }};border-radius:8px;">
+                <tr><td style="padding:16px 20px;">
+                  {% if intent_label %}<p style="margin:0 0 6px;color:{{ accent_color }};font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;">{{ intent_label }}</p>{% endif %}
+                  <h1 style="margin:0;color:{{ heading_color }};font-size:22px;font-weight:700;line-height:1.35;">{{ headline }}</h1>
+                </td></tr>
+              </table>
+            </td>
+          </tr>
+          {% else %}
+          <!-- HEADLINE (standard / payment) -->
           <tr>
             <td style="padding:40px 48px 0 48px;">
               {% if intent_label %}
@@ -90,17 +129,38 @@ _TEMPLATE = """\
               <h1 style="margin:0 0 22px;color:{{ heading_color }};font-size:{{ heading_font_size }};font-weight:700;line-height:1.3;letter-spacing:-0.5px;">{{ headline }}</h1>
             </td>
           </tr>
+          {% endif %}
+
+          {% if template == 'payment' and details %}
+          <!-- PAYMENT EMPHASIS CARD -->
+          <tr>
+            <td style="padding:26px 48px 6px 48px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:{{ primary_color }};border-radius:14px;">
+                {% for d in details %}
+                <tr>
+                  <td style="padding:16px 22px;{% if not loop.last %}border-bottom:1px solid rgba(255,255,255,0.15);{% endif %}">
+                    <span style="color:rgba(255,255,255,0.75);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;">{{ d.label }}</span>
+                  </td>
+                  <td align="right" style="padding:16px 22px;{% if not loop.last %}border-bottom:1px solid rgba(255,255,255,0.15);{% endif %}">
+                    <span style="color:#ffffff;font-size:18px;font-weight:800;">{{ d.value }}</span>
+                  </td>
+                </tr>
+                {% endfor %}
+              </table>
+            </td>
+          </tr>
+          {% endif %}
 
           <!-- BODY -->
           <tr>
-            <td style="padding:0 48px;">
+            <td style="padding:{% if template == 'promotional' %}36px 48px 0 48px{% else %}28px 48px 0 48px{% endif %};">
               {% for para in body_paragraphs %}
               <p style="margin:0 0 18px;color:{{ text_color }};font-size:{{ body_font_size }};line-height:1.8;">{{ para }}</p>
               {% endfor %}
             </td>
           </tr>
 
-          {% if details %}
+          {% if details and template != 'payment' %}
           <!-- DETAIL ROWS -->
           <tr>
             <td style="padding:8px 48px 4px 48px;">
@@ -123,12 +183,12 @@ _TEMPLATE = """\
           {% if cta_text %}
           <!-- CTA -->
           <tr>
-            <td style="padding:30px 48px 8px 48px;">
-              <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+            <td style="padding:30px 48px 8px 48px;{% if template == 'promotional' %}text-align:center;{% endif %}">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" {% if template == 'promotional' %}align="center"{% endif %}>
                 <tr>
-                  <td style="border-radius:{{ button_radius }};background-color:{{ button_color }};" bgcolor="{{ button_color }}">
-                    <!--[if mso]><v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" href="{{ cta_url }}" style="height:50px;v-text-anchor:middle;width:220px;" arcsize="20%" fillcolor="{{ button_color }}" strokecolor="{{ button_color }}"><w:anchorlock/><center style="color:{{ button_text_color }};font-family:sans-serif;font-size:15px;font-weight:700;">{{ cta_text }}</center></v:roundrect><![endif]-->
-                    <a href="{{ cta_url }}" style="display:inline-block;padding:15px 38px;color:{{ button_text_color }};text-decoration:none;font-size:15px;font-weight:700;border-radius:{{ button_radius }};mso-hide:all;letter-spacing:0.2px;">{{ cta_text }}</a>
+                  <td style="border-radius:{% if template == 'promotional' %}9999px{% else %}{{ button_radius }}{% endif %};background-color:{{ button_color }};" bgcolor="{{ button_color }}">
+                    <!--[if mso]><v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" href="{{ cta_url }}" style="height:{% if template == 'promotional' %}56px{% else %}50px{% endif %};v-text-anchor:middle;width:260px;" arcsize="50%" fillcolor="{{ button_color }}" strokecolor="{{ button_color }}"><w:anchorlock/><center style="color:{{ button_text_color }};font-family:sans-serif;font-size:15px;font-weight:700;">{{ cta_text }}</center></v:roundrect><![endif]-->
+                    <a href="{{ cta_url }}" style="display:inline-block;padding:{% if template == 'promotional' %}17px 48px{% else %}15px 38px{% endif %};color:{{ button_text_color }};text-decoration:none;font-size:{% if template == 'promotional' %}16px{% else %}15px{% endif %};font-weight:700;border-radius:{% if template == 'promotional' %}9999px{% else %}{{ button_radius }}{% endif %};mso-hide:all;letter-spacing:0.2px;">{{ cta_text }}</a>
                   </td>
                 </tr>
               </table>
@@ -233,6 +293,7 @@ def render_email(content: dict, style: dict | None = None) -> str:
 
     ctx = {
         **merged_style,
+        "template":        content.get("template") or select_template(content.get("intent")),
         "subject":         content.get("subject", ""),
         "preheader":       content.get("preheader", ""),
         "intent_label":    _INTENT_LABELS.get(content.get("intent", ""), ""),
